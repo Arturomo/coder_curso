@@ -2,20 +2,19 @@ import sys, os, pendulum
 # sys.path.insert(0,os.path.abspath(os.path.dirname(__file__)))
 from datetime import timedelta
 from airflow import DAG
-from airflow.operators.python import PythonOperator
-from download_info_api import create_tables, insert_weather_info
+from airflow.operators.python import PythonOperator, BranchPythonOperator
+from airflow.operators.empty import EmptyOperator
+from download_info_api import create_tables, insert_weather_info, chek_seismological, send_email
 
 DAG_ID = 'Api_weather'
-DAG_DESCRIPTION = 'Api_weather'
+DAG_DESCRIPTION = 'Extrae información climatica y sismica de los estados de México'
 DAG_SCHEDULE = '30 5 */1 * *'
 DAG_CATCHUP = False
-TAGS = ["Entregable_3"]
+TAGS = ["Proyecto_fianl"]
 
 ARGS = {
     'owner' : 'Arturo',
-    'start_date' : pendulum.datetime(2022, 1, 1, tz="America/Mexico_City"),
-    'retries': 3,
-    'retry_delay': timedelta(minutes=5),
+    'start_date' : pendulum.datetime(2022, 1, 1, tz="America/Mexico_City")
 }
 
 
@@ -37,4 +36,16 @@ with DAG(dag_id = DAG_ID,
                                         retries = 1,
                                         retry_delay = timedelta(minutes=1))
     
-    create_table_if_exist_task >> insert_weather_info_task
+    send_alert = BranchPythonOperator(task_id="Alert",
+                                            python_callable=chek_seismological,
+                                            do_xcom_push=False,
+                                            provide_context=True)
+    
+    Send_alert = PythonOperator(task_id = 'Send_alert',
+                                        python_callable = send_email,
+                                        retries = 1,
+                                        retry_delay = timedelta(minutes=1))
+    
+    no_alert = EmptyOperator(task_id="No_alert")
+    
+    create_table_if_exist_task >> insert_weather_info_task >> send_alert >> [Send_alert, no_alert]
